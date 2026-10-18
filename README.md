@@ -1,9 +1,11 @@
 # Virtualizing a dead Ruckus ZoneDirector
 
 When a ZoneDirector dies (ZD1100, ZD1200 or ZD3000) and an RMA is not an option,
-its configuration can still run on a virtual ZD1200. This project boots ZD1200
-firmware under QEMU, on Proxmox VE or in Docker. The guest joins your LAN as its
-own device, and your APs connect to it as they did to the physical box.
+its configuration can still run on a virtual ZD1200.
+
+This project installs ZD1200 firmware into a Proxmox VE or Docker container, which your APs connect to as they did to the physical box.
+
+ZD1200 virtualization is thanks to [Dan Brown](https://github.com/dbro)'s amazing [QEMU firmware experiment](https://github.com/dbro/zd1200). Dan also fixed mesh networking, which Ruckus managed to break on later firmware releases.
 
 The recipes below are alternatives, not steps: pick the one matching what
 survived. You need a ZD1200 firmware upgrade file from Ruckus/CommScope support,
@@ -123,5 +125,22 @@ container's **Summary** tab or
 `pct exec <id> -- cat /var/lib/zd1200/guest-ip`. `--help` lists every installer
 option; if it does not come up, see
 [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
+
+## Credits
+
+This project grew out of Dan Brown's [`dbro/zd1200`](https://github.com/dbro/zd1200).
+Besides proving the ZD1200 firmware boots under QEMU, Dan's work supplied:
+
+* the **Network Monitor** page and its collectors (`packages/analytics/`, ported
+  unchanged; see its README)
+* the **mesh fix**: the `wlan.ko` VLAN RX bug, its signature and the
+  replacement bytes (`packages/meshfix/`, `packages/meshfix-arm/`)
+* the QEMU kernel patches `kernel_halt` and `cob7402_reset_watchdog`, first
+  applied live through gdb (`scripts/container/patch-kernel.py` now applies
+  them offline)
+* the QEMU launch and container start-up scripts that `launch-vm.sh` and
+  `entrypoint.sh` grew from, and the analytics build stages of `docker/Dockerfile`
+
+## License
 
 MIT. See `LICENSE`.

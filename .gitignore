@@ -50,3 +50,5 @@ reasonix.toml
 
 # Built in-container by build-meshpatch-sig.sh
 packages/meshfix/meshpatch-sig.ko
+# Built by build-meshpatch-arm.sh
+packages/meshfix-arm/meshpatch-arm.ko

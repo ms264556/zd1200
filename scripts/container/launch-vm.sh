@@ -3,6 +3,9 @@
 # entrypoint.sh (the container entrypoint) — do NOT run it directly on the
 # host. The supported way to run this project is `sudo ./install-zd1200-docker.sh`
 # (= docker compose up -d --build). See README.md.
+#
+# Adapted from run-zd1200-qemu.sh in Dan Brown's dbro/zd1200
+# (https://github.com/dbro/zd1200).
 set -u
 
 work_dir="$(cd "$(dirname "$0")" && pwd)"

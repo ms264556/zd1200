@@ -68,6 +68,9 @@ DROPBEAR_DIR="${DROPBEAR_DIR:-$BASE/packages/dropbear}"
 # and ZD driver installed by patch 85.  Folded into the signature so a rebuilt
 # driver re-customises the roots instead of leaving the old copy in place.
 MESHFIX_DIR="${MESHFIX_DIR:-$BASE/packages/meshfix}"
+# ARM 3.14.43 mesh fix payload (packages/meshfix-arm/): the same runtime shape
+# for the ap-arm-dakota / ap-arm-qca APs.  Folded into the signature too.
+MESHFIX_ARM_DIR="${MESHFIX_ARM_DIR:-$BASE/packages/meshfix-arm}"
 ZD_ROOT_SSH_AUTHORIZED_KEYS="${ZD_ROOT_SSH_AUTHORIZED_KEYS:-/opt/zd1200/dropbear-provision/authorized_keys}"
 # Optional ECDSA host key for the administrative SSH service (patch 80).
 ZD_ECDSA_SSH="${ZD_ECDSA_SSH:-1}"
@@ -157,6 +160,11 @@ patch_sig="$( {
     fi
     if [ -d "$MESHFIX_DIR" ]; then
         ( cd "$MESHFIX_DIR" && find . -type f -print | LC_ALL=C sort | while read -r f; do
+              printf '%s ' "$f"; sha256sum "$f" | awk '{print $1}'
+          done ) | sha256sum | awk '{print $1}'
+    fi
+    if [ -d "$MESHFIX_ARM_DIR" ]; then
+        ( cd "$MESHFIX_ARM_DIR" && find . -type f -print | LC_ALL=C sort | while read -r f; do
               printf '%s ' "$f"; sha256sum "$f" | awk '{print $1}'
           done ) | sha256sum | awk '{print $1}'
     fi

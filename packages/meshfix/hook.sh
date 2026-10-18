@@ -70,31 +70,14 @@ if lsmod 2>/dev/null | grep -q '^meshpatch '; then
     exit 0
 fi
 
-# One-shot trial guard.  confirmed=0/attempts>=1 means a previous boot loaded
-# the module but never reached the confirmation check: leave stock this time.
-confirmed=0
-attempts=0
-if [ -f "$STATE" ]; then
-    # shellcheck disable=SC1090
-    . "$STATE" 2>/dev/null || true
-fi
-if [ "$confirmed" != 1 ] && [ "$attempts" -ge 1 ] 2>/dev/null; then
-    log "=== $(date) previous trial did not confirm (confirmed=$confirmed attempts=$attempts); leaving stock"
-    rm -f "$SENTINEL"
-    exit 0
-fi
-
-attempts=$((attempts + 1))
-{ echo "confirmed=0"; echo "attempts=$attempts"; } > "$STATE"
+{ echo "confirmed=0"; echo "attempts=1"; } > "$STATE"
 busybox sync 2>/dev/null || true
 
-log "=== $(date) loading $MODULE (attempt $attempts, wlan base $base size $size)"
+log "=== $(date) loading $MODULE (wlan base $base size $size)"
 insmod "$MODULE" "wlan_base=$base" "wlan_size=$size" >> "$LOG" 2>&1
 rc=$?
 if [ "$rc" -ne 0 ]; then
     log "insmod failed rc=$rc; leaving stock"
-    # A clean insmod failure did not patch anything; allow a retry next boot.
-    { echo "confirmed=0"; echo "attempts=0"; } > "$STATE"
     rm -f "$SENTINEL"
     busybox sync 2>/dev/null || true
     exit 0

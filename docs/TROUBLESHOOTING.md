@@ -306,6 +306,6 @@ What the network has to provide:
 
 | symptom | cause and fix |
 |---|---|
-| APs pass no Layer-2 traffic after joining | the runtime mesh fix is on by default. On the ZD check `/writable/zd1200-meshfix/topology.log` and `zd-meshfix status --all`; `--no-meshfix` / `ZD_MESHFIX=0` disables it |
-| an AP does not get the mesh fix | it is patched on join; confirm the ZD can reach the AP's CLI and that `/etc/zd1200-meshfix/zd-meshfix` exists |
+| APs pass no Layer-2 traffic after joining | the runtime mesh fix is on by default. On the ZD check `/writable/zd1200-meshfix/topology.log`, `/writable/zd1200-meshfix-arm/topology.log`, `zd-meshfix status --all` and `zd-meshfix-arm status --all`; `--no-meshfix` / `ZD_MESHFIX=0` disables it |
+| an AP does not get the mesh fix | it is patched on join; confirm the ZD can reach the AP's CLI and that `/etc/zd1200-meshfix/zd-meshfix` (MIPS) or `/etc/zd1200-meshfix-arm/zd-meshfix-arm` (ARM) exists |
 | the web UI offers an upgrade but the guest never applies it | check the console log; a guest firmware upgrade writes the new rootfs to the spare partition and is customised on the next container start. If it stops at `E_FailUpgradeNTP`, the entitlement NTP marker `/tmp/ntp_result` is missing (`S48zd_ntp_result`, patch 20, seeds it at boot) |

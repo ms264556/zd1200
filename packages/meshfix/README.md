@@ -1,8 +1,14 @@
-# Runtime ap-11n-scorpion mesh fix
+# Runtime MIPS mesh fix
 
 Deploy the 10.5.1.0.x mesh RX fix to APs from a ZoneDirector at runtime.  The
 stock signed AP firmware and the on-flash `wlan.ko` are untouched; a small
 kernel module changes two bytes in the loaded `wlan.ko` text.
+
+The bug and its fix were found by Dan Brown in
+[`dbro/zd1200`](https://github.com/dbro/zd1200), which patches `wlan.ko` in
+the AP firmware image (`ap_11n_scorpion_mesh_vlan_rx` in its
+`binary_patch_catalog.json`).  The signature and replacement used here are
+his; this package applies them at runtime instead.
 
 ## How it works
 
@@ -65,8 +71,8 @@ from `meshTopologyChange()`, so a joining AP is patched at runtime.
 * `hook.running` sentinel: a previous run that did not finish disables the
   hook for one boot.
 * kernel, module hash and `wlan` presence are checked before `insmod`.
-* one-shot trial: an attempt is recorded before `insmod` and confirmed only
-  after 90 seconds; an unconfirmed attempt leaves stock.
+* each boot records an attempt before `insmod` and confirms it after 90
+  seconds; a failed `insmod` leaves stock and is retried on the next boot.
 * the module verifies the stock word before writing; no match or multiple
   matches means no write.
 

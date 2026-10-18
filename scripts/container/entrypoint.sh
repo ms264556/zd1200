@@ -2,6 +2,9 @@
 # The container's entrypoint (Docker: the Compose command; LXC: zd1200.service).
 # Not for running by hand on the host: use install-zd1200-docker.sh or
 # install-zd1200-lxc.sh.
+#
+# The startup / readiness / shutdown handling is adapted from run-zd1200-web.sh
+# in Dan Brown's dbro/zd1200 (https://github.com/dbro/zd1200).
 set -euo pipefail
 
 # Exit status prepare-vm-disks.sh returns when the saved GRUB entry is a rescue

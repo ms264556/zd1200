@@ -46,6 +46,11 @@ table and its name strings are zeroed before the last recompression: the boot EL
 loader reads the program headers, and the section metadata is not part of the
 loaded image, so the payload compresses smaller.  A release that already fits is
 left byte-for-byte alone.
+
+This offline patcher replaces the live gdb patching (zd1200-patch.gdb) in Dan
+Brown's dbro/zd1200 (https://github.com/dbro/zd1200).  The kernel_halt and
+cob7402_reset_watchdog patches are his, and so is the idea of zeroing section
+names to win back gzip capacity.
 """
 
 import argparse

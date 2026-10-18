@@ -83,7 +83,7 @@
 #                            kept unless one of these is given.
 #   --network-monitor / --no-network-monitor
 #                            install (or not) the Network Monitor page
-#   --no-meshfix             skip the runtime ap-11n-scorpion mesh fix (installed
+#   --no-meshfix             skip the runtime mesh fix (MIPS + ARM; installed
 #                            by default)
 #   --console-tty / --no-console-tty
 #                            show the guest's serial console in the Proxmox
@@ -496,7 +496,7 @@ upgrade_existing_container() {
     # packages/analytics and re-links scripts/container/{image,packages}.  The
     # bare analytics/ bl7/ dropbear/ proxmox/ names are the pre-packages/ layout,
     # removed so an upgrade from it does not leave two copies behind.
-    pct exec "$CTID" -- bash -c "cd '$DEFAULT_CT_REPO' && rm -rf analytics bl7 dropbear proxmox packages/analytics packages/mesh-patch packages/meshfix docker docs scripts && rm -f README.md LICENSE install-zd1200-docker.sh install-zd1200-lxc.sh"
+    pct exec "$CTID" -- bash -c "cd '$DEFAULT_CT_REPO' && rm -rf analytics bl7 dropbear proxmox packages/analytics packages/mesh-patch packages/meshfix packages/meshfix-arm docker docs scripts && rm -f README.md LICENSE install-zd1200-docker.sh install-zd1200-lxc.sh"
     tar -C "$REPO_ROOT" -cf - \
         --exclude='./.git' --exclude='./.reasonix' --exclude='./.boot-test' \
         --exclude='./image' --exclude='./dropbear-provision' --exclude='./proxmox-build' \
@@ -817,7 +817,7 @@ if [ "$INTERACTIVE" = 1 ] && [ "$ADVANCED" = 1 ]; then
     feature_args+=("root-ssh" "Public-key root SSH on TCP 2222 (builds dropbear; slow)" "$([ -n "$ROOT_SSH_KEY" ] && echo ON || echo OFF)")
     feature_args+=("ecdsa" "ECDSA SSH host key alongside RSA" "$([ "$ECDSA" = 1 ] && echo ON || echo OFF)")
     feature_args+=("netmon" "Network Monitor page and collectors" "$([ "$NETWORK_MONITOR" = 1 ] && echo ON || echo OFF)")
-    feature_args+=("meshfix" "ap-11n-scorpion runtime mesh fix" "$([ "$MESHFIX" = 1 ] && echo ON || echo OFF)")
+    feature_args+=("meshfix" "runtime mesh fix (MIPS + ARM)" "$([ "$MESHFIX" = 1 ] && echo ON || echo OFF)")
     feature_args+=("onboot" "Start the container on host boot" "$([ "$ONBOOT" = 1 ] && echo ON || echo OFF)")
     selected="$("${WT[@]}" "${feature_args[@]}" 3>&1 1>&2 2>&3)" || die "cancelled"
     ECDSA=0; NETWORK_MONITOR=0; MESHFIX=1; ONBOOT=0

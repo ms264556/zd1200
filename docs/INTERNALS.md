@@ -585,14 +585,15 @@ the key lives on the writable partition (`/etc/airespider` →
 `/writable/etc/airespider`) so it survives upgrades. The 2222 listener offers it
 too. Controlled by `ZD_ECDSA_SSH` (default `1`); set it to `0` to revert.
 
-## AP mesh fix (ap-11n-scorpion)
+## AP mesh fix (MIPS + ARM)
 
 The fix is a runtime kernel module loaded on each AP, not an AP firmware image
-change. `packages/meshfix/` carries the signature-scanning module, the AP start
-hook and the ZD-side `zd-meshfix` driver;
-`scripts/container/patches/85-meshfix-hook.sh` installs them into the guest
-rootfs and calls `zd-meshfix install --all` from `meshTopologyChange()`, so an
-AP is patched when it joins and is reachable over the APCLI.
+change. `packages/meshfix/` carries the 2.6.32 MIPS signature-scanning module,
+the AP start hook and the ZD-side `zd-meshfix` driver; `packages/meshfix-arm/`
+carries the equivalent 3.14.43 ARM runtime and `zd-meshfix-arm` driver.
+`scripts/container/patches/85-meshfix-hook.sh` installs both runtimes into the
+guest rootfs and calls both drivers from `meshTopologyChange()`, so each AP is
+patched when it joins and is reachable over the APCLI.
 
 The fix is **on by default**. Set `ZD_MESHFIX=0` (the installer's
 `--no-meshfix`) to skip it; on Proxmox the choice is recorded in

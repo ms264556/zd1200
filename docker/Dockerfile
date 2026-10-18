@@ -5,6 +5,8 @@
 # Monitor" analytics payload (packages/analytics/), whose guest-side helpers are
 # i386 binaries compiled by the two build stages below, plus an optional static
 # dropbear replacement (packages/dropbear/) that is only built when ZD_ROOT_SSH=1.
+# The analytics build stages are adapted from the Dockerfile in Dan Brown's
+# dbro/zd1200 (https://github.com/dbro/zd1200).
 #
 # The guest is an i386 Linux 2.6.32 system, so the helpers must be i386 and
 # statically linked even when Docker builds the surrounding image on ARM64.

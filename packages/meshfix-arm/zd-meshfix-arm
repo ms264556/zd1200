@@ -1,0 +1,125 @@
+#!/bin/sh
+# zd-meshfix-arm - push the ARM 3.14.43 runtime mesh fix from a ZoneDirector.
+#
+# Runs on the ZD guest as root.  The ZD drives each ARM AP with rksap_cli
+# --shell (-s); that command fetches the module, hook and manifest from the
+# ZD's TFTP server and skips non-ARM APs.
+#
+# Usage:
+#   ./zd-meshfix-arm stage
+#   ./zd-meshfix-arm install|status|uninstall --all | --ap <mac>
+#
+# Environment:
+#   ZD_IP       ZD address the APs download from (default: br0 IPv4)
+#   RKSAP_CLI   path to the rksap_cli symlink (default: /bin/rksap_cli)
+#
+# -s is accepted only when argv[0] is rksap_cli; do not use remote_ap_cli.
+set -eu
+
+SELF_DIR=$(CDPATH= cd "$(dirname "$0")" && pwd)
+STAGE=/writable/etc/airespider-images/firmwares/meshfix-arm
+RKSAP_CLI=${RKSAP_CLI:-/bin/rksap_cli}
+TARGET_MODE=
+TARGET_MAC=
+
+usage() {
+    sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'
+}
+
+die() { echo "zd-meshfix-arm: $*" >&2; exit 1; }
+
+[ -x "$RKSAP_CLI" ] || die "$RKSAP_CLI not found; the AP shell mode needs the rksap_cli symlink"
+[ -f "$SELF_DIR/meshpatch-arm.ko" ] || die "$SELF_DIR/meshpatch-arm.ko not found"
+[ -f "$SELF_DIR/hook.sh" ] || die "$SELF_DIR/hook.sh not found"
+[ -f "$SELF_DIR/manifest.env" ] || die "$SELF_DIR/manifest.env not found"
+
+if [ -z "${ZD_IP:-}" ]; then
+    ZD_IP=$(ifconfig br0 2>/dev/null | sed -n 's/.*inet addr:\([0-9][0-9.]*\).*/\1/p' | head -n1)
+    [ -n "$ZD_IP" ] || ZD_IP=$(ifconfig 2>/dev/null | sed -n 's/.*inet addr:\([0-9][0-9.]*\).*/\1/p' | grep -v '^127\.' | head -n1)
+fi
+[ -n "${ZD_IP:-}" ] || die "cannot determine the ZD IP; set ZD_IP"
+[ -n "$ZD_IP" ] || die "ZD_IP is empty"
+
+# shellcheck disable=SC1090
+. "$SELF_DIR/manifest.env"
+[ -n "${EXPECTED_SHA:-}" ] || die "manifest.env has no EXPECTED_SHA"
+
+stage() {
+    mkdir -p "$STAGE"
+    cp -f "$SELF_DIR/meshpatch-arm.ko" "$STAGE/meshpatch-arm.ko"
+    cp -f "$SELF_DIR/hook.sh" "$STAGE/hook.sh"
+    cp -f "$SELF_DIR/manifest.env" "$STAGE/manifest.env"
+    # The AP fetches these over TFTP; keep them world-readable.
+    chmod 644 "$STAGE/meshpatch-arm.ko" "$STAGE/hook.sh" "$STAGE/manifest.env"
+    if ! echo "$EXPECTED_SHA  $STAGE/meshpatch-arm.ko" | sha256sum -c - >/dev/null 2>&1; then
+        die "staged meshpatch-arm.ko does not match manifest.env"
+    fi
+    echo "staged in $STAGE (sha $EXPECTED_SHA, ARM signature module)"
+}
+
+# One command, well under the APCLI 1023-byte limit.  The command skips
+# non-ARM APs, fetches the files from the ZD's TFTP server, installs the boot
+# hook and inserts the module immediately.
+install_command() {
+    cat <<EOF
+[ "\$(uname -m)" = "armv7l" ] || exit 0; mkdir -p /writable/zd1200-meshfix-arm /writable/data/scripts/start; cd /writable/zd1200-meshfix-arm; tftp -g -l meshpatch-arm.ko -r meshfix-arm/meshpatch-arm.ko $ZD_IP; tftp -g -l hook.sh -r meshfix-arm/hook.sh $ZD_IP; tftp -g -l manifest.env -r meshfix-arm/manifest.env $ZD_IP; chmod 755 hook.sh; cp hook.sh /writable/data/scripts/start/00-zdmf-meshpatch-arm; rm -f /writable/zd1200-meshfix-arm/state /writable/zd1200-meshfix-arm/hook.running; base=\$(awk '/^wlan /{print \$6}' /proc/modules); size=\$(awk '/^wlan /{print \$2}' /proc/modules); if [ -n "\$base" ] && [ -n "\$size" ]; then if lsmod | grep -q '^meshpatch '; then echo "meshfix-arm: already active"; else insmod ./meshpatch-arm.ko wlan_base=\$base wlan_size=\$size; fi; else echo "meshfix-arm: wlan not loaded"; fi; echo meshfix-arm-install-done
+EOF
+}
+
+status_command() {
+    cat <<'EOF'
+{ echo ===HOOK; cat /writable/zd1200-meshfix-arm/hook.log 2>/dev/null; echo ===STATE; cat /writable/zd1200-meshfix-arm/state 2>/dev/null; echo ===MODULE; lsmod | grep '^meshpatch ' || echo "meshpatch not loaded"; echo ===WLAN; grep '^wlan ' /proc/modules 2>/dev/null; }
+EOF
+}
+
+uninstall_command() {
+    cat <<'EOF'
+rm -f /writable/data/scripts/start/00-zdmf-meshpatch-arm; rm -f /writable/zd1200-meshfix-arm/hook.running /writable/zd1200-meshfix-arm/state; if lsmod | grep -q '^meshpatch '; then rmmod meshpatch && echo "meshpatch unloaded; reboot to restore the stock wlan text" || echo "rmmod failed; reboot to restore stock"; else echo "meshpatch not loaded"; fi; echo meshfix-arm-uninstall-done
+EOF
+}
+
+run_target() {
+    cmd=$1
+    case "$TARGET_MODE" in
+        all)  "$RKSAP_CLI" -s -A "$cmd" ;;
+        mac)  "$RKSAP_CLI" -s -a "$TARGET_MAC" "$cmd" ;;
+        *)    die "choose --all or --ap <mac>" ;;
+    esac
+}
+
+[ $# -ge 1 ] || { usage; exit 1; }
+action=$1
+shift
+
+case "$action" in
+    stage)
+        stage
+        exit 0
+        ;;
+    install|status|uninstall)
+        case "${1:-}" in
+            --all) TARGET_MODE=all; shift ;;
+            --ap)  TARGET_MODE=mac; TARGET_MAC=${2:-}; [ -n "$TARGET_MAC" ] || die "--ap needs a MAC"; shift 2 ;;
+            *)     usage; exit 1 ;;
+        esac
+        ;;
+    -h|--help)
+        usage; exit 0 ;;
+    *)
+        usage; exit 1 ;;
+esac
+
+stage
+
+case "$action" in
+    install)
+        run_target "$(install_command)"
+        echo "install requested; check with: $0 status --all"
+        ;;
+    status)
+        run_target "$(status_command)"
+        ;;
+    uninstall)
+        run_target "$(uninstall_command)"
+        ;;
+esac
