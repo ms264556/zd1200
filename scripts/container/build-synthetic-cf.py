@@ -33,12 +33,12 @@ import sys
 import tempfile
 
 base = Path(__file__).resolve().parent
-# Where the produced artifacts live: the vendor-derived image/, the package
-# payloads under packages/ and the ruckus-squashfs tools.  Defaults to the
-# script's own directory, which is the layout of the Docker image (/opt/zd1200).
-# The LXC install keeps the scripts in the repository checkout, so the CT
-# bootstrap links scripts/container/{image,packages,ruckus-squashfs} at the state
-# directory and the checkout; RUNTIME_DIR overrides the base for both layouts.
+# Where the produced artifacts live: the vendor-derived image/ and the package
+# payloads under packages/.  Defaults to the script's own directory, which is
+# the layout of the Docker image (/opt/zd1200).  The LXC install keeps the
+# scripts in the repository checkout, so the CT bootstrap links
+# scripts/container/{image,packages} at the state directory and the checkout;
+# RUNTIME_DIR overrides the base for both layouts.
 runtime = Path(os.environ.get("RUNTIME_DIR") or base)
 rootfs = runtime / "image" / "rootfs.ext2"
 kernel_src = runtime / "image" / "bzImage"   # raw; patch below for QEMU
@@ -224,46 +224,6 @@ with disk.open("r+b") as h:
         h.write(rfs)
 
 
-def patch_scorpion(stage: Path) -> None:
-    """Apply the ap-11n-scorpion (R600) mesh repair to the staged firmware tree.
-
-    ZoneDirector 10.5.1.0.276 introduced a mesh receive-path bug in the shared
-    ap-11n-scorpion AP image.  The vendored dbro/zd1200 tooling converts the
-    signed FSI image to unsigned UI, patches wlan.ko, and resizes the control
-    files of every model that aliases that image.  Non-R600 payloads (and
-    non-10.5.1 builds) are left alone by the helper.
-
-    Opt-in: the repair only runs when ZD_R600_REPAIR=1 (the installers'
-    --r600-repair), so the default deliverable is the vendor AP image.  The
-    repair has been observed to bootloop APs, hence the default.
-    """
-    # Opt-in: the vendor AP images are delivered unmodified unless the repair was
-    # asked for (the installers' --r600-repair), because the repaired image has
-    # been observed to bootloop APs.  Only an explicit ZD_R600_REPAIR=1 enables
-    # it, so an unset or unexpected value means "leave the vendor image alone".
-    if (os.environ.get("ZD_R600_REPAIR") or "").strip() != "1":
-        print("  ap-11n-scorpion mesh repair not enabled (set ZD_R600_REPAIR=1 to repair)")
-        return
-    firmware_root = stage / "firmwares"
-    if not (firmware_root / "r600").is_dir():
-        print("  no r600 firmware in payload; ap-11n-scorpion mesh repair skipped")
-        return
-    helper = runtime / "packages" / "mesh-patch" / "patch-scorpion-payload.py"
-    unsquashfs = runtime / "ruckus-squashfs" / "unsquashfs"
-    mksquashfs = runtime / "ruckus-squashfs" / "mksquashfs"
-    if not (helper.is_file() and unsquashfs.is_file() and mksquashfs.is_file()):
-        raise SystemExit(
-            "ap-11n-scorpion mesh repair tooling missing "
-            f"({helper}, {unsquashfs}, {mksquashfs})"
-        )
-    print("  checking the ap-11n-scorpion (R600) mesh repair")
-    subprocess.run(
-        [sys.executable, str(helper), str(stage),
-         "--unsquashfs", str(unsquashfs), "--mksquashfs", str(mksquashfs)],
-        check=True,
-    )
-
-
 def stage_payload(stage: Path) -> None:
     """Stage the vendor /writable content a firmware install leaves behind: the
     web-UI aidfs/ (ac_upg.sh _upg_aidfs) and the AP images under
@@ -285,7 +245,6 @@ def stage_payload(stage: Path) -> None:
             tar.extractall(path=str(stage), members=members, filter="data")
         except TypeError:          # Python < 3.12 has no extract filter
             tar.extractall(path=str(stage), members=members)
-    patch_scorpion(stage)
     made = stage / "firmwares"
     if made.is_dir():
         target = stage / "etc" / "airespider-images"

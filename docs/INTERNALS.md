@@ -585,45 +585,23 @@ the key lives on the writable partition (`/etc/airespider` →
 `/writable/etc/airespider`) so it survives upgrades. The 2222 listener offers it
 too. Controlled by `ZD_ECDSA_SSH` (default `1`); set it to `0` to revert.
 
-## AP mesh repair (ap-11n-scorpion / R600 family)
+## AP mesh fix (ap-11n-scorpion)
 
-**This repair is opt-in and off by default.** It has been observed to bootloop
-APs, so the vendor AP image is delivered unmodified unless it is asked for:
-`--r600-repair` on either installer (on Proxmox the choice is recorded as
-`ZD_R600_REPAIR` in `/etc/zd1200.conf`, so a later disk rebuild and `--upgrade`
-keep it; on Docker set `ZD_R600_REPAIR=1` in `.env`). `--no-r600-repair` still
-exists to turn an inherited repair back off. `build-synthetic-cf.py` applies the
-repair only on an explicit `ZD_R600_REPAIR=1`.
+The fix is a runtime kernel module loaded on each AP, not an AP firmware image
+change. `packages/meshfix/` carries the signature-scanning module, the AP start
+hook and the ZD-side `zd-meshfix` driver;
+`scripts/container/patches/85-meshfix-hook.sh` installs them into the guest
+rootfs and calls `zd-meshfix install --all` from `meshTopologyChange()`, so an
+AP is patched when it joins and is reachable over the APCLI.
 
-Firmware 10.5.1.0.276 introduced a receive-path bug in the shared
-`ap-11n-scorpion` AP image: a wired Root AP looks healthy, but a wireless Mesh AP
-shows as connected and passes no ordinary Layer-2 traffic. 10.5.1.0.282 — the
-release this project otherwise recommends — still carries it.
+The fix is **on by default**. Set `ZD_MESHFIX=0` (the installer's
+`--no-meshfix`) to skip it; on Proxmox the choice is recorded in
+`/etc/zd1200.conf`, and on Docker set `ZD_MESHFIX=0` in `.env`.
 
-The image repairs the AP firmware as it is staged, so the controller delivers an
-already-fixed image and the appliance needs no in-guest tooling.
-`scripts/container/build-synthetic-cf.py` calls `packages/mesh-patch/patch-scorpion-payload.py`
-(ported from [`dbro/zd1200`](https://github.com/dbro/zd1200), see `packages/mesh-patch/README.md`)
-on the extracted `/writable` tree: it converts the signed FSI image to unsigned
-UI, `unsquashfs`/`mksquashfs`es the AP rootfs to patch `wlan.ko`, rebuilds the
-BL7, and rewrites the `*_cntrl.rcks` size fields of every model that aliases that
-image (r600, r500, r310, t300, t300e, t301n, t301s). Because the AP rootfs is
-historical LZMA SquashFS, the Dockerfile carries a `ruckus-squashfs-tools` stage
-that builds the matching `unsquashfs`/`mksquashfs` from pinned GPL-2.0 source.
-
-**The repair targets AC Wave 1 APs (e.g. R600)**: every model that resolves to
-the identical vendor image gets the same repaired image. **A repaired image
-requires the AP to already run Solo 104 or 106 firmware**: the repair produces an
-unsigned image, and an AP on anything older will not accept it, so the APs must be
-moved to Solo 104/106 through their own standalone upgrade page first. An AP still
-on fully signed FSI firmware has the same prerequisite.
-
-This is the one repair that keys off a version number: the helper reads the AP
-image's own BL7 version and applies the fix only to a 10.5.1 build at or after
-**10.5.1.0.276**, printing
-`ap-11n-scorpion payload <ver> is not a 10.5.1 build >= 276; mesh repair skipped`
-otherwise. Earlier 10.5.1 builds (.255 and before) are unaffected, and the image
-is not touched at all when the payload has no `r600/` directory.
+The module scans the loaded `wlan.ko` for the catalog signature, requires
+exactly one match, verifies the stock branch and writes the `bnel` → `b`
+change. A build that does not match is a clean no-op. The AP image itself is
+never modified or re-signed.
 
 ## Board data and identity
 

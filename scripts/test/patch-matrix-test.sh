@@ -157,7 +157,7 @@ for img in "${IMAGES[@]}"; do
         continue
     fi
 
-    if ! SYNTHETIC_DISK="$SCRATCH/$rel/synthetic-cf.img" ZD_R600_REPAIR=0 \
+    if ! SYNTHETIC_DISK="$SCRATCH/$rel/synthetic-cf.img" \
             python3 "$RT/build-synthetic-cf.py" > "$SCRATCH/$rel.build.log" 2>&1; then
         echo "   build-synthetic-cf: FAILED (see $SCRATCH/$rel.build.log$KEEP_HINT)"
         printf '%s\tprepare=ok\tkernel=%s\tpatches=BUILD-FAILED\n' "$rel" "$kverdict" >> "$SCRATCH/summary.tsv"

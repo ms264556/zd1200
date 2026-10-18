@@ -76,11 +76,8 @@ services:
       ZD_ROOT_SSH_AUTHORIZED_KEYS: /opt/zd1200/dropbear-provision/authorized_keys
       # Add an ECDSA host key beside RSA, so modern SSH clients connect.
       ZD_ECDSA_SSH: ${ZD_ECDSA_SSH:-1}
-      # Patch the ap-11n-scorpion (R600) mesh bug out of the AP image the guest
-      # delivers.  Opt-in: off by default, because the repaired image has been
-      # observed to bootloop APs (install-zd1200-docker.sh --r600-repair, or set
-      # ZD_R600_REPAIR=1 in .env, to enable it).
-      ZD_R600_REPAIR: ${ZD_R600_REPAIR:-0}
+      # Runtime ap-11n-scorpion mesh fix; on by default.
+      ZD_MESHFIX: ${ZD_MESHFIX:-1}
       WEB_WAIT_SECONDS: "600"
       VM_SNAPSHOT: "0"
       # On stop, ask the guest to reboot (unmount and flush /writable) over

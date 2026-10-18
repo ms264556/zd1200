@@ -3,7 +3,7 @@
 # installer-options-test.sh — each installer's option parser and its --help agree,
 # and a bad command line fails at the parse, before the installer does any work.
 #
-# The docs send users to options by name (--r600-repair, --writable-partition,
+# The docs send users to options by name (--no-meshfix, --writable-partition,
 # --container-mac ...), and an option the parser accepts but --help never lists is
 # one nobody can find.  So every `--option` the parser's case patterns name must
 # appear in that installer's --help.  A bad command line (an unknown option, an
@@ -68,27 +68,19 @@ for name in docker lxc; do
     pass "$name: an unknown option and an option without its value are refused"
 done
 
-# --- the R600 AP mesh repair is opt-in --------------------------------------
-# The repair bootlooped APs, so it must not be applied unless it was asked for:
-# every entry point defaults it off, and --r600-repair is what turns it on.  The
-# default is a shell assignment an argument-less run reaches before any of the
-# work, and the installers cannot be driven that far offline, so it is checked
-# statically here.  The gate that consumes ZD_R600_REPAIR is exercised
-# behaviourally by build-synthetic-cf-debugfs-test.py.
-grep -qE '(^|; )R600_REPAIR=0(;|$)' "$REPO/install-zd1200-lxc.sh" \
-    || fail "install-zd1200-lxc.sh does not default the R600 mesh repair off"
-grep -qF 'r600_repair="${ZD_R600_REPAIR:-0}"' "$REPO/install-zd1200-docker.sh" \
-    || fail "install-zd1200-docker.sh does not default the R600 mesh repair off"
-grep -qE '(^|; )R600_REPAIR=0(;|$)' "$REPO/scripts/container/proxmox/zd1200-ct-bootstrap.sh" \
-    || fail "zd1200-ct-bootstrap.sh does not default the R600 mesh repair off"
-grep -qF '${ZD_R600_REPAIR:-0}' "$REPO/docker/docker-compose.yml" \
-    || fail "docker-compose.yml does not default ZD_R600_REPAIR off"
+# --- the runtime mesh fix is on by default and --no-meshfix opts out ----------
+grep -qE '(^|; )MESHFIX=1(;|$)' "$REPO/install-zd1200-lxc.sh" \
+    || fail "install-zd1200-lxc.sh does not default the mesh fix on"
+grep -qE '(^|; )MESHFIX=1(;|$)' "$REPO/scripts/container/proxmox/zd1200-ct-bootstrap.sh" \
+    || fail "zd1200-ct-bootstrap.sh does not default the mesh fix on"
+grep -qF '${ZD_MESHFIX:-1}' "$REPO/docker/docker-compose.yml" \
+    || fail "docker-compose.yml does not default ZD_MESHFIX on"
 for f in install-zd1200-lxc.sh install-zd1200-docker.sh \
          scripts/container/proxmox/zd1200-ct-bootstrap.sh; do
-    grep -q -- '--r600-repair)' "$REPO/$f" \
-        || fail "$f has no --r600-repair to opt in to the R600 mesh repair"
+    grep -q -- '--no-meshfix)' "$REPO/$f" \
+        || fail "$f has no --no-meshfix to opt out of the mesh fix"
 done
-pass "the R600 mesh repair is opt-in: every entry point defaults it off and --r600-repair enables it"
+pass "the mesh fix is on by default; every entry point has --no-meshfix"
 
 # pct() forwards `pct exec` into the container with this shell's TMPDIR removed:
 # the container does not have the host's directories.  Run the real function

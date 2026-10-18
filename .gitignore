@@ -47,3 +47,6 @@ reasonix.toml
 
 # scripts/test/boot-test.sh state (synthetic CF, qcow2 overlay, serial log)
 .boot-test/
+
+# Built in-container by build-meshpatch-sig.sh
+packages/meshfix/meshpatch-sig.ko

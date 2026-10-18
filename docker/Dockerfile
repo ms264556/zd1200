@@ -143,26 +143,18 @@ RUN if [ "$ZD_ROOT_SSH" = "1" ]; then \
     fi
 
 # ---------------------------------------------------------------------------
-# Build the Ruckus AP SquashFS tools (for the ap-11n-scorpion mesh repair).
-#
-# The R600 AP rootfs uses historical LZMA SquashFS, so the matching unsquashfs
-# / mksquashfs are built from the pinned GPL-2.0 source.  These are host tools
-# used by build-synthetic-cf.py, so build them natively.
+# Build the mesh-fix module (MIPS) from source and the vendored template.
 # ---------------------------------------------------------------------------
-FROM --platform=$BUILDPLATFORM $DEBIAN_IMAGE AS ruckus-squashfs-tools
+FROM --platform=$BUILDPLATFORM $DEBIAN_IMAGE AS meshfix
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG RUCKUS_AP_TOOLS_REV=3d9e4add414228eac4091f301e813d14130c3d61
-
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        build-essential ca-certificates git zlib1g-dev \
-    && rm -rf /var/lib/apt/lists/* \
-    && git init /src \
-    && git -C /src remote add origin https://github.com/ms264556/ruckus_ap_firmware_mod.git \
-    && git -C /src fetch --depth 1 origin "$RUCKUS_AP_TOOLS_REV" \
-    && git -C /src checkout --detach FETCH_HEAD \
-    && make -C /src/src/squashfs4.0-ruckus-lzma -j"$(nproc)"
+        binutils-mips-linux-gnu gcc-mips-linux-gnu python3 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY packages/meshfix/ /src/meshfix/
+RUN sh /src/meshfix/build-meshpatch-sig.sh --out /out
 
 # ---------------------------------------------------------------------------
 # Stage 3: the runtime image.
@@ -215,14 +207,9 @@ COPY --from=zd-dropbear /out/ /opt/zd1200/packages/dropbear/
 # The 2222 listener init script is part of the installed payload (the build
 # stage only emits the compiled binaries).
 COPY packages/dropbear/zd1200-root-ssh-init.sh /opt/zd1200/packages/dropbear/
-# ap-11n-scorpion (R600) mesh repair: the vendored BL7/patch modules and the
-# SquashFS tools built above.  build-synthetic-cf.py runs
-# packages/mesh-patch/patch-scorpion-payload.py on the staged /writable tree.
-COPY packages/mesh-patch/ /opt/zd1200/packages/mesh-patch/
-COPY --from=ruckus-squashfs-tools \
-     /src/src/squashfs4.0-ruckus-lzma/mksquashfs \
-     /src/src/squashfs4.0-ruckus-lzma/unsquashfs \
-     /opt/zd1200/ruckus-squashfs/
+# Runtime ap-11n-scorpion mesh fix: the signature module, AP hook and ZD driver.
+COPY packages/meshfix/ /opt/zd1200/packages/meshfix/
+COPY --from=meshfix /out/meshpatch-sig.ko /out/manifest.env /out/manifest.json /opt/zd1200/packages/meshfix/
 
 RUN chmod +x /opt/zd1200/*.sh /opt/zd1200/*.py /opt/zd1200/patches/*.sh \
         /opt/zd1200/zd1200-guest-* /opt/zd1200/zd1200-docker-health \
@@ -230,8 +217,6 @@ RUN chmod +x /opt/zd1200/*.sh /opt/zd1200/*.py /opt/zd1200/patches/*.sh \
         /opt/zd1200/packages/analytics/zd1200-ping-monitor \
         /opt/zd1200/packages/analytics/zd1200-ping-export \
         /opt/zd1200/packages/analytics/zd1200-local-getstat \
-        /opt/zd1200/packages/mesh-patch/*.py \
-        /opt/zd1200/ruckus-squashfs/mksquashfs /opt/zd1200/ruckus-squashfs/unsquashfs \
     && mkdir -p /opt/zd1200/image /var/lib/zd1200
 
 ENV STATE_DIR=/var/lib/zd1200 \

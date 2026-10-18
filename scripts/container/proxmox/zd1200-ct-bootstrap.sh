@@ -38,13 +38,8 @@
 #                            (builds the static dropbear replacement; slow)
 #   --no-ecdsa               do not add an ECDSA host key to the SSH service
 #   --no-network-monitor     skip the Network Monitor page + collectors
-#   --r600-repair            enable the ap-11n-scorpion (R600) mesh repair of the
-#                            AP images seeded into /writable.  Opt-in: off by
-#                            default, because the repaired image has been observed
-#                            to bootloop APs.  The APs must already run Solo 104
-#                            or 106 firmware before the repaired image is accepted.
-#   --no-r600-repair         leave the vendor AP images alone (the default);
-#                            accepted so a re-run can turn an inherited repair off
+#   --no-meshfix             skip the runtime ap-11n-scorpion mesh fix (installed
+#                            by default)
 #   --no-console-tty         leave /dev/tty1 as a login prompt instead of
 #                            putting the guest's serial console on it
 #   --keep-ct-address        keep the container's own IP address while the guest
@@ -88,7 +83,7 @@ ROOT_SSH_KEY=""
 ECDSA=1
 NETWORK_MONITOR=1
 # Opt-in: leave the vendor AP images alone unless the repair was asked for.
-R600_REPAIR=0
+MESHFIX=1
 CONSOLE_TTY=1
 KEEP_CT_ADDRESS=0
 SHARE_MAC=0
@@ -124,19 +119,6 @@ run_logged() {
 warn() { printf 'warning: %s\n' "$*" >&2; }
 die()  { printf 'error: %s\n' "$*" >&2; exit 1; }
 
-# ruckus_tool_is_placeholder <path>: is this the inert `#!/bin/sh; exit 0` script
-# an older version of this bootstrap wrote for the Ruckus squashfs tools when the
-# R600 repair was disabled?  Such a file is executable, so a plain -x test would
-# accept it as "already built" and a later opt-in would silently repair nothing.
-ruckus_tool_is_placeholder() {
-    [ -f "$1" ] || return 1
-    # Check the shebang two bytes at a time first: reading a whole line of a real
-    # ELF tool (the common case) would spill null bytes into the substitution.
-    [ "$(head -c 2 "$1" 2>/dev/null)" = "#!" ] || return 1
-    [ "$(head -n1 "$1" 2>/dev/null)" = "#!/bin/sh" ] || return 1
-    [ "$(sed -n 2p "$1" 2>/dev/null)" = "exit 0" ]
-}
-
 while [ $# -gt 0 ]; do
     case "$1" in
         --source)               SOURCE="${2:?--source needs a path}"; shift 2 ;;
@@ -150,8 +132,7 @@ while [ $# -gt 0 ]; do
         --root-ssh-key)         ROOT_SSH_KEY="${2:?}"; shift 2 ;;
         --no-ecdsa)             ECDSA=0; shift ;;
         --no-network-monitor)   NETWORK_MONITOR=0; shift ;;
-        --r600-repair)          R600_REPAIR=1; shift ;;
-        --no-r600-repair)       R600_REPAIR=0; shift ;;
+        --no-meshfix)           MESHFIX=0; shift ;;
         --no-console-tty)       CONSOLE_TTY=0; shift ;;
         --keep-ct-address)      KEEP_CT_ADDRESS=1; shift ;;
         --share-mac)            SHARE_MAC=1; shift ;;
@@ -284,8 +265,6 @@ ln -sfn "$REPO_DIR/packages" "$CC/packages"
 for legacy in bl7 analytics dropbear; do
     [ -L "$CC/$legacy" ] && rm -f "$CC/$legacy"
 done
-mkdir -p "$REPO_DIR/ruckus-squashfs"
-[ -e "$CC/ruckus-squashfs" ] || ln -sfn "$REPO_DIR/ruckus-squashfs" "$CC/ruckus-squashfs"
 mkdir -p "$STATE_DIR/provision"
 [ -e "$REPO_DIR/dropbear-provision" ] || ln -sfn "$STATE_DIR/provision" "$REPO_DIR/dropbear-provision"
 
@@ -297,40 +276,6 @@ if [ "$DO_PAYLOADS" = 1 ]; then
     # i386 architecture below.  `dpkg --add-architecture i386` changes gcc's
     # default library search, after which a native link can no longer resolve
     # -lz (observed: "/bin/ld: cannot find -lz" on Debian 13).
-    # 3a. the ap-11n-scorpion (R600) mesh repair needs the matching historical
-    # LZMA squashfs tools, built from the pinned GPL-2.0 source (the Dockerfile
-    # builds the same revision in its ruckus-squashfs-tools stage).
-    if [ "$R600_REPAIR" = 1 ]; then
-        if [ ! -x "$REPO_DIR/ruckus-squashfs/mksquashfs" ] \
-           || ruckus_tool_is_placeholder "$REPO_DIR/ruckus-squashfs/mksquashfs"; then
-            log "building the Ruckus squashfs tools (R600 mesh repair)"
-            RUCKUS_SRC="$STATE_DIR/build/ruckus_ap_firmware_mod"
-            RUCKUS_REV=3d9e4add414228eac4091f301e813d14130c3d61
-            rm -rf "$RUCKUS_SRC"
-            mkdir -p "$RUCKUS_SRC"
-            git init -q "$RUCKUS_SRC"
-            git -C "$RUCKUS_SRC" remote add origin https://github.com/ms264556/ruckus_ap_firmware_mod.git
-            git -C "$RUCKUS_SRC" fetch -q --depth 1 origin "$RUCKUS_REV"
-            git -C "$RUCKUS_SRC" checkout -q --detach FETCH_HEAD
-            make -C "$RUCKUS_SRC/src/squashfs4.0-ruckus-lzma" -j"$(nproc)" \
-                >"$STATE_DIR/build/squashfs-build.log" 2>&1 \
-                || { tail -20 "$STATE_DIR/build/squashfs-build.log" >&2; die "squashfs build failed"; }
-            cp "$RUCKUS_SRC/src/squashfs4.0-ruckus-lzma/mksquashfs" \
-               "$RUCKUS_SRC/src/squashfs4.0-ruckus-lzma/unsquashfs" \
-               "$REPO_DIR/ruckus-squashfs/"
-        fi
-    else
-        # Without the repair the tools are never called: build-synthetic-cf.py
-        # returns before it checks for them, so no placeholder is needed.  Remove
-        # any an older version wrote, so that opting in later builds the real
-        # tools instead of finding an executable no-op.
-        for t in mksquashfs unsquashfs; do
-            if ruckus_tool_is_placeholder "$REPO_DIR/ruckus-squashfs/$t"; then
-                rm -f "$REPO_DIR/ruckus-squashfs/$t"
-            fi
-        done
-    fi
-
     # 3b. Network Monitor guest helpers: static i386, built with the
     # distribution's musl-gcc + the SQLite release contemporary with the
     # guest's Linux 2.6.32 (see the Dockerfile's analytics-helper stage).
@@ -394,6 +339,24 @@ if [ "$DO_PAYLOADS" = 1 ]; then
             --out "$REPO_DIR/packages/dropbear" \
             >"$STATE_DIR/build/dropbear-build.log" 2>&1 \
             || { tail -20 "$STATE_DIR/build/dropbear-build.log" >&2; die "dropbear build failed"; }
+    fi
+
+    # 3d. the runtime mesh fix module is built from meshpatch-sig.c and the
+    # vendored wlan_fils.ko template; it is tiny, so build it when absent.
+    if [ ! -f "$REPO_DIR/packages/meshfix/meshpatch-sig.ko" ]; then
+        if ! command -v mips-linux-gnu-gcc >/dev/null 2>&1; then
+            log "installing the MIPS cross toolchain"
+            apt-get update -qq >/dev/null 2>&1 || true
+            DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+                gcc-mips-linux-gnu binutils-mips-linux-gnu \
+                >"$STATE_DIR/build/meshfix-apt.log" 2>&1 \
+                || { tail -20 "$STATE_DIR/build/meshfix-apt.log" >&2; die "MIPS toolchain install failed"; }
+        fi
+        log "building the mesh patch module (MIPS)"
+        sh "$REPO_DIR/packages/meshfix/build-meshpatch-sig.sh" \
+            --out "$REPO_DIR/packages/meshfix" \
+            >"$STATE_DIR/build/meshfix-build.log" 2>&1 \
+            || { tail -20 "$STATE_DIR/build/meshfix-build.log" >&2; die "meshfix build failed"; }
     fi
 fi
 
@@ -635,20 +598,18 @@ printf 'ZD_CT_ADDRESS_FOLLOW_QEMU=%s\n' "$([ "$KEEP_CT_ADDRESS" = 1 ] && echo 0 
 # file.  Reconcile them here so an upgrade that changes a feature (say --no-ecdsa)
 # is not re-patched with the new value and then undone by the start.
 #
-# ZD_R600_REPAIR is not part of the patch signature (it only decides what is
-# seeded into /writable when the disk is built), but it belongs here all the same:
-# a later disk rebuild on start, and an --upgrade that inherits the setting, both
-# read it back from this file.
+# ZD_MESHFIX is part of the patch signature, so a later disk rebuild on start
+# and an --upgrade both read it back from this file.
 #
 # ZD_ROOT_SSH is derived rather than flagged, because the 2222 listener is
 # installed from the built payload: the switch must follow whether
 # packages/dropbear carries the binary, or an upgrade that builds (or drops) it
 # would leave the file claiming the old state.  Nothing at runtime reads it --
 # patch 60 decides from the payload and the authorized key.
-sed -i '/^ZD_ECDSA_SSH=/d; /^ZD_NETWORK_MONITOR=/d; /^ZD_R600_REPAIR=/d; /^ZD_ROOT_SSH=/d' "$CONF"
+sed -i '/^ZD_ECDSA_SSH=/d; /^ZD_NETWORK_MONITOR=/d; /^ZD_R600_REPAIR=/d; /^ZD_MESHFIX=/d; /^ZD_ROOT_SSH=/d' "$CONF"
 printf 'ZD_ECDSA_SSH=%s\n' "$ECDSA" >> "$CONF"
 printf 'ZD_NETWORK_MONITOR=%s\n' "$NETWORK_MONITOR" >> "$CONF"
-printf 'ZD_R600_REPAIR=%s\n' "$R600_REPAIR" >> "$CONF"
+printf 'ZD_MESHFIX=%s\n' "$MESHFIX" >> "$CONF"
 printf 'ZD_ROOT_SSH=%s\n' "$([ -x "$REPO_DIR/packages/dropbear/dropbear" ] && echo 1 || echo 0)" >> "$CONF"
 
 # Single source of truth from here on: the file is what the service reads.
@@ -858,7 +819,7 @@ if [ "$DO_DISKS" = 1 ]; then
     ZD_SIGN_CERT_DIR="$SIGN_DIR" \
     ZD_ECDSA_SSH="$ECDSA" \
     ZD_NETWORK_MONITOR="$NETWORK_MONITOR" \
-    ZD_R600_REPAIR="$R600_REPAIR" \
+    ZD_MESHFIX="$MESHFIX" \
     ZD_ROOT_SSH_AUTHORIZED_KEYS="$STATE_DIR/provision/authorized_keys" \
     ZD_VIRTUAL_BUILD_ID="${ZD_VIRTUAL_BUILD_ID:-}" \
         run_logged "building and patching the guest disk (several minutes; log: $INSTALL_LOG)" \

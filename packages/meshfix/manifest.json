@@ -1,0 +1,17 @@
+{
+  "artifact": "ap_11n_scorpion_wlan_ko",
+  "firmware": "any (signature-verified)",
+  "kernel": "2.6.32.24",
+  "module": "meshpatch-sig.ko",
+  "module_sha256": "b6a8f4e7fa439fcff993bcecb27d80d3b2aea564eac6200bb5b5a507ea75d6c7",
+  "template": "wlan_fils.c stub",
+  "wlan_stock_sha256": "93fdbc15992827f1e8d0f2ed954260f54ca923c3a7f04838ba4311a08d0faff7",
+  "patch_method": "on-device signature scan",
+  "signature": "90 42 00 0c 90 63 00 0d 00 02 12 00 00 62 18 25 34 02 81 00 54 62 ?? ?? 8e a2 01 08 8e a5 01 08 3c 02 ?? ?? 24 06 00 10 24 42 ?? ?? 00 40 f8 09 24 a4 00 02 24 05 00 02 02 00 f8 09 02 a0 20 21",
+  "signature_length": 64,
+  "patch_offset": 20,
+  "stock_word": "0x5462000b",
+  "patched_word": "0x1000000b",
+  "param_insmod": "insmod meshpatch-sig.ko wlan_base=<wlan base> wlan_size=<wlan size>",
+  "instruction": "bnel -> b (mesh RX VLAN inner-EtherType bypass)"
+}

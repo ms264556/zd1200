@@ -64,15 +64,17 @@ ANALYTICS_DIR="${ANALYTICS_DIR:-$BASE/packages/analytics}"
 # public key it installs.  Both are folded into the signature so
 # enabling/disabling the feature or rotating the key re-customises the roots.
 DROPBEAR_DIR="${DROPBEAR_DIR:-$BASE/packages/dropbear}"
+# Runtime mesh fix payload (packages/meshfix/): the module, AP hook, manifest
+# and ZD driver installed by patch 85.  Folded into the signature so a rebuilt
+# driver re-customises the roots instead of leaving the old copy in place.
+MESHFIX_DIR="${MESHFIX_DIR:-$BASE/packages/meshfix}"
 ZD_ROOT_SSH_AUTHORIZED_KEYS="${ZD_ROOT_SSH_AUTHORIZED_KEYS:-/opt/zd1200/dropbear-provision/authorized_keys}"
 # Optional ECDSA host key for the administrative SSH service (patch 80).
 ZD_ECDSA_SSH="${ZD_ECDSA_SSH:-1}"
 # Optional Network Monitor page + collectors (patch 50); 0 installs nothing.
 ZD_NETWORK_MONITOR="${ZD_NETWORK_MONITOR:-1}"
-# Optional ap-11n-scorpion (R600) mesh repair of the AP images seeded into
-# /writable; opt-in, so 0 (deliver the vendor AP image) unless asked for.  The
-# repair has been observed to bootloop APs, which is why it is not the default.
-ZD_R600_REPAIR="${ZD_R600_REPAIR:-0}"
+# Runtime mesh fix (patch 85): on by default; 0 skips it.
+ZD_MESHFIX="${ZD_MESHFIX:-1}"
 MARKER="${MARKER:-$STATE_DIR/.disk-built}"
 # The container's own record that a configuration backup was seeded into the
 # built /writable.  The guest's half (patch 26) applies and consumes the staged
@@ -153,6 +155,11 @@ patch_sig="$( {
               printf '%s ' "$f"; sha256sum "$f" | awk '{print $1}'
           done ) | sha256sum | awk '{print $1}'
     fi
+    if [ -d "$MESHFIX_DIR" ]; then
+        ( cd "$MESHFIX_DIR" && find . -type f -print | LC_ALL=C sort | while read -r f; do
+              printf '%s ' "$f"; sha256sum "$f" | awk '{print $1}'
+          done ) | sha256sum | awk '{print $1}'
+    fi
     if [ -r "$ZD_ROOT_SSH_AUTHORIZED_KEYS" ]; then
         printf 'ZD_ROOT_SSH_KEY=%s\n' "$(sha256sum "$ZD_ROOT_SSH_AUTHORIZED_KEYS" | awk '{print $1}')"
     else
@@ -160,6 +167,7 @@ patch_sig="$( {
     fi
     printf 'ZD_ECDSA_SSH=%s\n' "$ZD_ECDSA_SSH"
     printf 'ZD_NETWORK_MONITOR=%s\n' "$ZD_NETWORK_MONITOR"
+    printf 'ZD_MESHFIX=%s\n' "$ZD_MESHFIX"
     printf 'ZD_PING_INTERVAL_SECONDS=%s\n' "${ZD_PING_INTERVAL_SECONDS:-}"
     printf 'ZD_PING_CLIENT_TARGETS=%s\n' "${ZD_PING_CLIENT_TARGETS:-}"
 } | sha256sum | awk '{print $1}')"
@@ -220,7 +228,7 @@ EOF
     # existing appliance whose rootfs changed and refuse to rebuild it.
     NEW_DISK="$DISK.building"
     rm -f "$NEW_DISK"
-    SYNTHETIC_DISK="$NEW_DISK" ZD_R600_REPAIR="$ZD_R600_REPAIR" \
+    SYNTHETIC_DISK="$NEW_DISK" \
         python3 "$BASE/build-synthetic-cf.py"
     say "Writing board data (serial=${ZD_SERIAL:-123456000789}, MAC1=${ZD_MAC1:-00:0c:e6:12:00:01})"
     python3 "$BASE/write-boarddata.py" --disk "$NEW_DISK" \
@@ -451,6 +459,7 @@ for patch in "$PATCHES_DIR"/*.sh; do
         ZD_ROOT_SSH_AUTHORIZED_KEYS="$ZD_ROOT_SSH_AUTHORIZED_KEYS" \
         ZD_ECDSA_SSH="$ZD_ECDSA_SSH" \
         ZD_NETWORK_MONITOR="$ZD_NETWORK_MONITOR" \
+        ZD_MESHFIX="$ZD_MESHFIX" \
         ZD_VIRTUAL_BUILD_ID="${ZD_VIRTUAL_BUILD_ID:-}" \
         ZD_PING_INTERVAL_SECONDS="${ZD_PING_INTERVAL_SECONDS:-}" \
         ZD_PING_CLIENT_TARGETS="${ZD_PING_CLIENT_TARGETS:-}" \

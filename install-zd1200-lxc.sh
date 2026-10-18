@@ -83,13 +83,8 @@
 #                            kept unless one of these is given.
 #   --network-monitor / --no-network-monitor
 #                            install (or not) the Network Monitor page
-#   --r600-repair            enable the ap-11n-scorpion (R600) mesh repair on the
-#                            AP image the guest delivers.  Opt-in: off by default,
-#                            because the repaired image has been observed to
-#                            bootloop APs.  The APs must already run Solo 104 or
-#                            106 firmware before they accept the repaired image.
-#   --no-r600-repair         keep the vendor AP image (the default); accepted so
-#                            an --upgrade can turn an inherited repair off
+#   --no-meshfix             skip the runtime ap-11n-scorpion mesh fix (installed
+#                            by default)
 #   --console-tty / --no-console-tty
 #                            show the guest's serial console in the Proxmox
 #                            "Console" tab, or leave a login prompt there
@@ -156,7 +151,7 @@ DUMP_STAGE_BYTES=$((8 * 1024 * 1024 * 1024))
 CORES=4; MEMORY=4096; ONBOOT=1
 POSITIONALS=(); OPT_FIRMWARE=""; OPT_BACKUP=""; OPT_WRITABLE=""; WRITABLE_PARTITION=""; CONTAINER_MAC_OVERRIDE=""
 ADVANCED=0
-ROOT_SSH_KEY=""; ECDSA=1; NETWORK_MONITOR=1; R600_REPAIR=0; CONSOLE_TTY=1; KEEP_CT_ADDRESS=0
+ROOT_SSH_KEY=""; ECDSA=1; NETWORK_MONITOR=1; MESHFIX=1; CONSOLE_TTY=1; KEEP_CT_ADDRESS=0
 SHARE_UPLINK_MAC=1; SHARE_UPLINK_MAC_SET=0
 STATIC_IP=""; GATEWAY=""; TEMPLATE=""; TIMEOUT=1200
 ASSUME_YES=0; INTERACTIVE=1
@@ -164,7 +159,7 @@ UPGRADE=0
 UNINSTALL=0
 # Set when the matching option was given explicitly, so an upgrade can keep the
 # feature set already configured in the container by default.
-ECDSA_SET=0; NETWORK_MONITOR_SET=0; R600_REPAIR_SET=0; CONSOLE_TTY_SET=0; KEEP_CT_ADDRESS_SET=0
+ECDSA_SET=0; NETWORK_MONITOR_SET=0; MESHFIX_SET=0; CONSOLE_TTY_SET=0; KEEP_CT_ADDRESS_SET=0
 
 # whiptail geometry (the PVE helper convention).
 WT=(whiptail --backtitle "ZD1200 LXC installer" --title "ZD1200" --cancel-button Cancel)
@@ -215,8 +210,7 @@ while [ $# -gt 0 ]; do
         --no-ecdsa)             ECDSA=0; ECDSA_SET=1; shift ;;
         --network-monitor)      NETWORK_MONITOR=1; NETWORK_MONITOR_SET=1; shift ;;
         --no-network-monitor)   NETWORK_MONITOR=0; NETWORK_MONITOR_SET=1; shift ;;
-        --r600-repair)          R600_REPAIR=1; R600_REPAIR_SET=1; shift ;;
-        --no-r600-repair)       R600_REPAIR=0; R600_REPAIR_SET=1; shift ;;
+        --no-meshfix)           MESHFIX=0; MESHFIX_SET=1; shift ;;
         --console-tty)          CONSOLE_TTY=1; CONSOLE_TTY_SET=1; shift ;;
         --no-console-tty)       CONSOLE_TTY=0; CONSOLE_TTY_SET=1; shift ;;
         --keep-ct-address)      KEEP_CT_ADDRESS=1; KEEP_CT_ADDRESS_SET=1; shift ;;
@@ -445,10 +439,9 @@ upgrade_existing_container() {
     [ "$ECDSA_SET" = 1 ] || ECDSA="${v:-1}"
     v="$(ct_conf_get "$CTID" ZD_NETWORK_MONITOR)"
     [ "$NETWORK_MONITOR_SET" = 1 ] || NETWORK_MONITOR="${v:-1}"
-    # The R600 repair is opt-in, so its fallback is off: an upgrade keeps a
-    # repair the container was installed with only when it recorded one.
-    v="$(ct_conf_get "$CTID" ZD_R600_REPAIR)"
-    [ "$R600_REPAIR_SET" = 1 ] || R600_REPAIR="${v:-0}"
+    # The runtime mesh fix is on by default; keep what the container recorded.
+    v="$(ct_conf_get "$CTID" ZD_MESHFIX)"
+    [ "$MESHFIX_SET" = 1 ] || MESHFIX="${v:-1}"
     if [ "$CONSOLE_TTY_SET" = 0 ]; then
         if pct exec "$CTID" -- grep -q '^ZD_CONSOLE_SOCK=' /etc/zd1200.conf 2>/dev/null; then
             CONSOLE_TTY=1
@@ -498,13 +491,12 @@ upgrade_existing_container() {
     pct exec "$CTID" -- mkdir -p "$DEFAULT_CT_REPO"
     # Replace the checkout's own trees rather than overlaying them: a patch or
     # script deleted in the new revision must not linger in the container, or it
-    # stays in the patch signature and keeps being applied.  The built payloads
-    # (packages/dropbear/, ruckus-squashfs/) are deliberately kept; the bootstrap
-    # rebuilds packages/analytics and re-links
-    # scripts/container/{image,packages,ruckus-squashfs}.  The bare analytics/
-    # bl7/ dropbear/ proxmox/ names are the pre-packages/ layout, removed so an
-    # upgrade from it does not leave two copies of the payloads behind.
-    pct exec "$CTID" -- bash -c "cd '$DEFAULT_CT_REPO' && rm -rf analytics bl7 dropbear proxmox packages/analytics packages/mesh-patch docker docs scripts && rm -f README.md LICENSE install-zd1200-docker.sh install-zd1200-lxc.sh"
+    # stays in the patch signature and keeps being applied.  The built payload
+    # (packages/dropbear/) is deliberately kept; the bootstrap rebuilds
+    # packages/analytics and re-links scripts/container/{image,packages}.  The
+    # bare analytics/ bl7/ dropbear/ proxmox/ names are the pre-packages/ layout,
+    # removed so an upgrade from it does not leave two copies behind.
+    pct exec "$CTID" -- bash -c "cd '$DEFAULT_CT_REPO' && rm -rf analytics bl7 dropbear proxmox packages/analytics packages/mesh-patch packages/meshfix docker docs scripts && rm -f README.md LICENSE install-zd1200-docker.sh install-zd1200-lxc.sh"
     tar -C "$REPO_ROOT" -cf - \
         --exclude='./.git' --exclude='./.reasonix' --exclude='./.boot-test' \
         --exclude='./image' --exclude='./dropbear-provision' --exclude='./proxmox-build' \
@@ -521,11 +513,7 @@ upgrade_existing_container() {
     [ -n "$key_line" ] && bootstrap_args+=(--root-ssh-key "$key_line")
     [ "$ECDSA" = 0 ] && bootstrap_args+=(--no-ecdsa)
     [ "$NETWORK_MONITOR" = 0 ] && bootstrap_args+=(--no-network-monitor)
-    if [ "$R600_REPAIR" = 1 ]; then
-        bootstrap_args+=(--r600-repair)
-    else
-        bootstrap_args+=(--no-r600-repair)
-    fi
+    [ "$MESHFIX" = 0 ] && bootstrap_args+=(--no-meshfix)
     [ "$CONSOLE_TTY" = 0 ] && bootstrap_args+=(--no-console-tty)
     [ "$KEEP_CT_ADDRESS" = 1 ] && bootstrap_args+=(--keep-ct-address)
     if ! pct exec "$CTID" -- "$DEFAULT_CT_REPO/scripts/container/proxmox/zd1200-ct-bootstrap.sh" "${bootstrap_args[@]}"; then
@@ -829,14 +817,14 @@ if [ "$INTERACTIVE" = 1 ] && [ "$ADVANCED" = 1 ]; then
     feature_args+=("root-ssh" "Public-key root SSH on TCP 2222 (builds dropbear; slow)" "$([ -n "$ROOT_SSH_KEY" ] && echo ON || echo OFF)")
     feature_args+=("ecdsa" "ECDSA SSH host key alongside RSA" "$([ "$ECDSA" = 1 ] && echo ON || echo OFF)")
     feature_args+=("netmon" "Network Monitor page and collectors" "$([ "$NETWORK_MONITOR" = 1 ] && echo ON || echo OFF)")
-    feature_args+=("r600" "R600 / ap-11n-scorpion mesh repair (may bootloop APs)" "$([ "$R600_REPAIR" = 1 ] && echo ON || echo OFF)")
+    feature_args+=("meshfix" "ap-11n-scorpion runtime mesh fix" "$([ "$MESHFIX" = 1 ] && echo ON || echo OFF)")
     feature_args+=("onboot" "Start the container on host boot" "$([ "$ONBOOT" = 1 ] && echo ON || echo OFF)")
     selected="$("${WT[@]}" "${feature_args[@]}" 3>&1 1>&2 2>&3)" || die "cancelled"
-    ECDSA=0; NETWORK_MONITOR=0; R600_REPAIR=0; ONBOOT=0
+    ECDSA=0; NETWORK_MONITOR=0; MESHFIX=1; ONBOOT=0
     case " $selected " in *'"root-ssh"'*) ROOT_SSH_WANTED=1 ;; *) ROOT_SSH_WANTED=0 ;; esac
     case " $selected " in *'"ecdsa"'*) ECDSA=1 ;; esac
     case " $selected " in *'"netmon"'*) NETWORK_MONITOR=1 ;; esac
-    case " $selected " in *'"r600"'*) R600_REPAIR=1 ;; esac
+    case " $selected " in *'"meshfix"'*) MESHFIX=1 ;; *) MESHFIX=0 ;; esac
     case " $selected " in *'"onboot"'*) ONBOOT=1 ;; esac
     if [ "${ROOT_SSH_WANTED:-0}" = 1 ] && [ -z "$ROOT_SSH_KEY" ]; then
         keyfile="$("${WT[@]}" --inputbox "Path to your SSH public key (.pub):" 8 80 "$HOME/.ssh/id_ed25519.pub" 3>&1 1>&2 2>&3)" || die "cancelled"
@@ -939,7 +927,7 @@ Optional pieces
   root SSH (2222) ... $([ -n "$ROOT_SSH_KEY_LINE" ] && printf 'yes (%s)' "${ROOT_SSH_KEY_LINE%% *}" || echo no)
   ECDSA host key .... $([ "$ECDSA" = 1 ] && echo yes || echo no)
   Network Monitor ... $([ "$NETWORK_MONITOR" = 1 ] && echo yes || echo no)
-  R600 mesh repair .. $([ "$R600_REPAIR" = 1 ] && echo yes || echo no)
+  Mesh fix .......... $([ "$MESHFIX" = 1 ] && echo on || echo "off (--no-meshfix)")
   Console tab ....... $([ "$CONSOLE_TTY" = 1 ] && echo "guest serial console" || echo "container login prompt")
   Container address . $([ "$KEEP_CT_ADDRESS" = 1 ] && echo "kept while the guest runs" || echo "released while the guest runs")
 EOF
@@ -1190,11 +1178,7 @@ elif [ -n "$GUEST_MAC" ]; then
 fi
 [ "$ECDSA" = 0 ] && bootstrap_args+=(--no-ecdsa)
 [ "$NETWORK_MONITOR" = 0 ] && bootstrap_args+=(--no-network-monitor)
-if [ "$R600_REPAIR" = 1 ]; then
-    bootstrap_args+=(--r600-repair)
-else
-    bootstrap_args+=(--no-r600-repair)
-fi
+[ "$MESHFIX" = 0 ] && bootstrap_args+=(--no-meshfix)
 [ "$CONSOLE_TTY" = 0 ] && bootstrap_args+=(--no-console-tty)
 [ "$KEEP_CT_ADDRESS" = 1 ] && bootstrap_args+=(--keep-ct-address)
 

@@ -51,8 +51,8 @@ above, skips the first question:
 
 Everything not asked has a default derived from the host: CT ID (first free),
 hostname `zd1200`, storage (the first that holds container rootfs), Debian 13 template (fetched if
-absent), DHCP, ECDSA host key and Network Monitor on, the R600 repair off (it is
-opt-in, `--r600-repair`), and:
+absent), DHCP, ECDSA host key, Network Monitor and the runtime mesh fix on
+(`--no-meshfix` disables it), and:
 
 | size | default | why |
 |---|---|---|
