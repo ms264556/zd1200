@@ -604,6 +604,15 @@ exactly one match, verifies the stock branch and writes the `bnel` → `b`
 change. A build that does not match is a clean no-op. The AP image itself is
 never modified or re-signed.
 
+The ARM module recognises two first-word variants: ZoneDirector 10.5.1.x
+(`ldr r3, [r4, #0x118]`) and SmartZone 5.2.2 (`ldr r3, [r6, #0x124]`). The
+rest of the check sequence and the `bne` word are identical, and the patcher
+still requires exactly one match overall. SmartZone 5.2.2's MIPS scorpion
+image does not contain the destructive block, so the MIPS module is a no-op
+there; its ARM 3.14.43 images do contain it. Because the hook and module live
+on `/writable`, an AP patched by the ZD can be moved to a SmartZone controller
+and the hook re-applies the patch on each boot.
+
 ## Board data and identity
 
 The board data (serial + MACs) is authoritative for the guest: the vendor

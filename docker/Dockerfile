@@ -145,7 +145,8 @@ RUN if [ "$ZD_ROOT_SSH" = "1" ]; then \
     fi
 
 # ---------------------------------------------------------------------------
-# Build the mesh-fix module (MIPS) from source and the vendored template.
+# Build the mesh-fix modules (MIPS 2.6.32 and ARM 3.14.43) from source.
+# Both use a C wlan_fils.c stub, so no vendor wlan_fils.ko is needed.
 # ---------------------------------------------------------------------------
 FROM --platform=$BUILDPLATFORM $DEBIAN_IMAGE AS meshfix
 
@@ -157,6 +158,17 @@ RUN apt-get update \
 
 COPY packages/meshfix/ /src/meshfix/
 RUN sh /src/meshfix/build-meshpatch-sig.sh --out /out
+
+FROM --platform=$BUILDPLATFORM $DEBIAN_IMAGE AS meshfix-arm
+
+ARG DEBIAN_FRONTEND=noninteractive
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        binutils-arm-linux-gnueabi gcc-arm-linux-gnueabi \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY packages/meshfix-arm/ /src/meshfix-arm/
+RUN sh /src/meshfix-arm/build-meshpatch-arm.sh --out /out
 
 # ---------------------------------------------------------------------------
 # Stage 3: the runtime image.
@@ -212,6 +224,9 @@ COPY packages/dropbear/zd1200-root-ssh-init.sh /opt/zd1200/packages/dropbear/
 # Runtime ap-11n-scorpion mesh fix: the signature module, AP hook and ZD driver.
 COPY packages/meshfix/ /opt/zd1200/packages/meshfix/
 COPY --from=meshfix /out/meshpatch-sig.ko /out/manifest.env /out/manifest.json /opt/zd1200/packages/meshfix/
+# Runtime ARM 3.14.43 mesh fix (ap-arm-dakota / ap-arm-qca).
+COPY packages/meshfix-arm/ /opt/zd1200/packages/meshfix-arm/
+COPY --from=meshfix-arm /out/meshpatch-arm.ko /out/manifest.env /opt/zd1200/packages/meshfix-arm/
 
 RUN chmod +x /opt/zd1200/*.sh /opt/zd1200/*.py /opt/zd1200/patches/*.sh \
         /opt/zd1200/zd1200-guest-* /opt/zd1200/zd1200-docker-health \

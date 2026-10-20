@@ -89,3 +89,7 @@ There is no firmware-version check: the module's signature and stock-word
 check decide whether a matching `wlan` is patched.  The hook still requires
 kernel 2.6.32.24, a matching module hash and `wlan` loaded; a build that does
 not match fails `insmod` and leaves stock.
+
+The SmartZone 5.2.2.0.2122 MIPS scorpion image does not have the destructive
+VLAN block: the signature has no match there and the module is a clean no-op.
+The SmartZone 5.2.2 ARM 3.14.43 image does have it; see `../meshfix-arm/`.

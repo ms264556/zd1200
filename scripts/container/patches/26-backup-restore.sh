@@ -36,7 +36,7 @@ cat > "$WORK/S48zd_restore" <<'ZD_RESTORE_INIT'
 #
 # S48zd_restore — apply a staged configuration backup on the first boot.
 #
-# Installed by scripts/container/patches/26-backup-restore.sh (dbro_zd1200).
+# Installed by scripts/container/patches/26-backup-restore.sh (zd1200).
 # rcS runs this after S47migrate has mounted /writable and before S50controller
 # starts, so the controller comes up with the restored configuration.  See
 # /etc/zd1200-restore.sh for the restore itself; it is a no-op unless the

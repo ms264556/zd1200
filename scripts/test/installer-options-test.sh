@@ -158,9 +158,10 @@ pass "docker: a path that does not exist is reported as not found"
 # installer dies at its host check long before the uninstall path (the same reason
 # only Docker is driven for --upgrade above), so the real script cannot be run here.
 eval "$(grep -E '^CT_MARKER=' "$REPO/install-zd1200-lxc.sh")"
+eval "$(grep -E '^LEGACY_CT_MARKER=' "$REPO/install-zd1200-lxc.sh")"
 eval "$(grep -E '^LEGACY_SUMMARY_[A-Z_]+=' "$REPO/install-zd1200-lxc.sh")"
-[ -n "$CT_MARKER" ] && [ -n "$LEGACY_SUMMARY_HELPER" ] && [ -n "$LEGACY_SUMMARY_UNIT" ] && [ -n "$LEGACY_SUMMARY_UNIT_DIR" ] \
-    || fail "could not read CT_MARKER / LEGACY_SUMMARY_* out of the installer"
+[ -n "$CT_MARKER" ] && [ -n "$LEGACY_CT_MARKER" ] && [ -n "$LEGACY_SUMMARY_HELPER" ] && [ -n "$LEGACY_SUMMARY_UNIT" ] && [ -n "$LEGACY_SUMMARY_UNIT_DIR" ] \
+    || fail "could not read CT_MARKER / LEGACY_CT_MARKER / LEGACY_SUMMARY_* out of the installer"
 
 # The summary updater itself is gone: the guest's address is shown from the
 # container's own zd0 interface, so only the cleanup of an older copy remains.
@@ -171,11 +172,12 @@ grep -q 'remove_legacy_pve_summary_helper' "$REPO/install-zd1200-lxc.sh" \
 pass "the Proxmox summary updater is removed, with a legacy cleanup left in its place"
 
 {
+    awk '/^ct_has_marker\(\) \{/,/^}/' "$REPO/install-zd1200-lxc.sh"
     awk '/^find_zd1200_ctids\(\) \{/,/^}/' "$REPO/install-zd1200-lxc.sh"
     awk '/^remove_legacy_pve_summary_helper\(\) \{/,/^}/' "$REPO/install-zd1200-lxc.sh"
     awk '/^uninstall_zd1200_container\(\) \{/,/^}/' "$REPO/install-zd1200-lxc.sh"
 } > "$TMP/uninstall-fns.sh"
-for fn in find_zd1200_ctids remove_legacy_pve_summary_helper uninstall_zd1200_container; do
+for fn in ct_has_marker find_zd1200_ctids remove_legacy_pve_summary_helper uninstall_zd1200_container; do
     grep -q "^$fn()" "$TMP/uninstall-fns.sh" || fail "the installer no longer defines $fn()"
 done
 
@@ -187,7 +189,7 @@ done
 dispatch="$(grep -n '^if \[ "\$UNINSTALL" = 1 \]; then$' "$REPO/install-zd1200-lxc.sh" | cut -d: -f1)"
 [ -n "$dispatch" ] || fail "could not find the --uninstall dispatch in the installer"
 [ "$(printf '%s\n' "$dispatch" | wc -l)" = 1 ] || fail "expected one --uninstall dispatch, found lines: $(printf '%s ' $dispatch)"
-for fn in pct lock_host unlock_host find_zd1200_ctids remove_legacy_pve_summary_helper \
+for fn in ct_has_marker pct lock_host unlock_host find_zd1200_ctids remove_legacy_pve_summary_helper \
           uninstall_zd1200_container; do
     def="$(grep -n "^$fn()" "$REPO/install-zd1200-lxc.sh" | cut -d: -f1)"
     [ -n "$def" ] || fail "$fn() is not defined in the installer"
@@ -212,7 +214,8 @@ printf '#Ruckus ZD1200 virtual appliance (%s)\n' "$CT_MARKER" > "$TMP/lxc/121.co
 printf 'arch: amd64\n' > "$TMP/lxc/200.conf"
 
 run_fns() { # run_fns <function> [arg...]
-    CT_MARKER="$CT_MARKER" LEGACY_SUMMARY_UNIT="$LEGACY_SUMMARY_UNIT" \
+    CT_MARKER="$CT_MARKER" LEGACY_CT_MARKER="$LEGACY_CT_MARKER" \
+    LEGACY_SUMMARY_UNIT="$LEGACY_SUMMARY_UNIT" \
     LEGACY_SUMMARY_UNIT_DIR="$TMP/units" LEGACY_SUMMARY_HELPER="$TMP/sbin/zd1200-pve-summary-host" \
     ZD_FAKE_SYSTEMCTL_LOG="$TMP/systemctl.log" \
     PATH="$TMP/fakebin:$PATH" bash -c '. "$1"; shift; "$@"' _ "$TMP/uninstall-fns.sh" "$@"
@@ -221,6 +224,15 @@ run_fns() { # run_fns <function> [arg...]
 got="$(run_fns find_zd1200_ctids "$TMP/lxc" | tr '\n' ' ')"
 [ "$got" = "120 121 " ] || { printf '%s\n' "$got" >&2; fail "find_zd1200_ctids should report only the marked containers"; }
 pass "a container counts as a ZD1200 one only when it carries the installer's marker"
+
+# Renaming the repository changed the marker's first component.  A container
+# installed under the old name must still be found (and therefore still be
+# upgradable and removable).
+printf '#Ruckus ZD1200 virtual appliance (%s)\n' "$LEGACY_CT_MARKER" > "$TMP/lxc/122.conf"
+got="$(run_fns find_zd1200_ctids "$TMP/lxc" | tr '\n' ' ')"
+[ "$got" = "120 121 122 " ] || { printf '%s\n' "$got" >&2; fail "find_zd1200_ctids should also report a container carrying the pre-rename marker"; }
+rm -f "$TMP/lxc/122.conf"
+pass "a container installed before the repository rename is still recognised"
 
 # The legacy cleanup: silent when there is nothing to remove, and otherwise it
 # stops the timer before deleting it and both units, and is safe to repeat.
@@ -288,6 +300,7 @@ run_uninstall() { # run_uninstall <confdir> [ctid]
     # LXC_CONF_DIR is what the installer derives from ZD_LXC_CONF_DIR; the harness
     # sets it directly, so the sourced functions look in the fixture.
     LXC_CONF_DIR="$1" ZD_LXC_CONF_DIR="$1" CTID="${2:-}" CT_MARKER="$CT_MARKER" \
+    LEGACY_CT_MARKER="$LEGACY_CT_MARKER" \
     LEGACY_SUMMARY_UNIT="$LEGACY_SUMMARY_UNIT" LEGACY_SUMMARY_UNIT_DIR="$TMP/units" \
     LEGACY_SUMMARY_HELPER="$TMP/sbin/zd1200-pve-summary-host" \
     ZD_FAKE_PCT_LOG="$TMP/pct.log" ZD_FAKE_SYSTEMCTL_LOG="$TMP/systemctl.log" \

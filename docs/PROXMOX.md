@@ -31,8 +31,8 @@ and `docker/` are unaffected.
 As root on the Proxmox host:
 
 ```sh
-git clone https://github.com/ms264556/dbro_zd1200
-cd dbro_zd1200
+git clone https://github.com/ms264556/zd1200
+cd zd1200
 ./install-zd1200-lxc.sh /path/to/zd1200_10.5.1.0.282.ap_10.5.1.0.282.img
 ```
 

@@ -119,7 +119,11 @@ DEFAULT_CT_REPO=/opt/zd1200
 # Every container this installer makes carries this marker in its Proxmox
 # description.  It is how a later run recognises its own containers -- for
 # --upgrade and for --uninstall -- so it is written and matched from one place.
-CT_MARKER='installed by dbro_zd1200/install-zd1200-lxc.sh'
+CT_MARKER='installed by zd1200/install-zd1200-lxc.sh'
+# Containers made before the repository was renamed still carry the old
+# directory name in their marker.  Accept both spellings so those appliances can
+# still be upgraded or uninstalled after the rename.
+LEGACY_CT_MARKER='installed by dbro_zd1200/install-zd1200-lxc.sh'
 # The obsolete host-global summary timer: an older version installed it to write
 # each guest's address into its container's Summary description, which Proxmox
 # already shows from the container's own zd0 interface (see
@@ -348,6 +352,12 @@ next_free_ctid() {
 # 0b. --upgrade: re-provision an existing container from this checkout, without
 # touching the firmware image, /writable, or the keys it already holds.
 # --------------------------------------------------------------------------
+# ct_has_marker <lxc-conf>: whether this installer wrote the container, under
+# either the current marker or the pre-rename spelling.
+ct_has_marker() {
+    grep -qF -e "$CT_MARKER" -e "$LEGACY_CT_MARKER" -- "$1"
+}
+
 # find_zd1200_ctids [confdir]: the ids of the containers this installer made,
 # recognised by the description marker.  Never fails -- an empty list is a valid
 # answer, because "the container is already gone" is exactly the case --uninstall
@@ -357,7 +367,7 @@ find_zd1200_ctids() {
     local dir="${1:-$LXC_CONF_DIR}" f id
     for f in "$dir"/*.conf; do
         [ -f "$f" ] || continue
-        grep -qF "$CT_MARKER" "$f" || continue
+        ct_has_marker "$f" || continue
         id="$(basename "$f" .conf)"
         printf '%s\n' "$id"
     done
@@ -426,7 +436,7 @@ upgrade_existing_container() {
     [ -f "/etc/pve/lxc/$CTID.conf" ] || die "container $CTID does not exist"
     # The upgrade stops services and replaces trees inside the container, so an
     # explicit --ctid must name one this installer made, not any container.
-    grep -qF "$CT_MARKER" "/etc/pve/lxc/$CTID.conf" \
+    ct_has_marker "/etc/pve/lxc/$CTID.conf" \
         || die "container $CTID does not carry this installer's description marker, so it is not a ZD1200 container made by it; refusing to upgrade it"
     pct status "$CTID" >/dev/null 2>&1 || die "cannot query container $CTID"
 
@@ -631,7 +641,7 @@ uninstall_zd1200_container() {
         [ -f "$LXC_CONF_DIR/$CTID.conf" ] || die "container $CTID does not exist"
         # An explicit --ctid must name a container this installer made, not any
         # container on the host: uninstall destroys it and its disks.
-        grep -qF "$CT_MARKER" "$LXC_CONF_DIR/$CTID.conf" \
+        ct_has_marker "$LXC_CONF_DIR/$CTID.conf" \
             || die "container $CTID does not carry this installer's description marker, so it is not a ZD1200 container made by it; refusing to remove it"
         ids=("$CTID")
     else

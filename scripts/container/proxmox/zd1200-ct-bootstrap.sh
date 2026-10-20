@@ -341,8 +341,9 @@ if [ "$DO_PAYLOADS" = 1 ]; then
             || { tail -20 "$STATE_DIR/build/dropbear-build.log" >&2; die "dropbear build failed"; }
     fi
 
-    # 3d. the runtime mesh fix module is built from meshpatch-sig.c and the
-    # vendored wlan_fils.ko template; it is tiny, so build it when absent.
+    # 3d. the runtime mesh fix modules are built from source: meshpatch-sig.c
+    # with the 2.6.32 wlan_fils.c stub (MIPS), and meshpatch-arm.c with the
+    # 3.14.43 wlan_fils.c stub (ARM).  Both are tiny, so build them when absent.
     if [ ! -f "$REPO_DIR/packages/meshfix/meshpatch-sig.ko" ]; then
         if ! command -v mips-linux-gnu-gcc >/dev/null 2>&1; then
             log "installing the MIPS cross toolchain"
@@ -357,6 +358,21 @@ if [ "$DO_PAYLOADS" = 1 ]; then
             --out "$REPO_DIR/packages/meshfix" \
             >"$STATE_DIR/build/meshfix-build.log" 2>&1 \
             || { tail -20 "$STATE_DIR/build/meshfix-build.log" >&2; die "meshfix build failed"; }
+    fi
+    if [ ! -f "$REPO_DIR/packages/meshfix-arm/meshpatch-arm.ko" ]; then
+        if ! command -v arm-linux-gnueabi-gcc >/dev/null 2>&1; then
+            log "installing the ARM cross toolchain"
+            apt-get update -qq >/dev/null 2>&1 || true
+            DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+                gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi \
+                >"$STATE_DIR/build/meshfix-arm-apt.log" 2>&1 \
+                || { tail -20 "$STATE_DIR/build/meshfix-arm-apt.log" >&2; die "ARM toolchain install failed"; }
+        fi
+        log "building the mesh patch module (ARM)"
+        sh "$REPO_DIR/packages/meshfix-arm/build-meshpatch-arm.sh" \
+            --out "$REPO_DIR/packages/meshfix-arm" \
+            >"$STATE_DIR/build/meshfix-arm-build.log" 2>&1 \
+            || { tail -20 "$STATE_DIR/build/meshfix-arm-build.log" >&2; die "meshfix-arm build failed"; }
     fi
 fi
 
@@ -700,7 +716,7 @@ UNIT
 cat > /etc/systemd/system/zd1200.service <<'UNIT'
 [Unit]
 Description=ZoneDirector ZD1200 virtual appliance (QEMU guest)
-Documentation=https://github.com/ms264556/dbro_zd1200
+Documentation=https://github.com/ms264556/zd1200
 After=network-online.target zd1200-net.service
 Wants=network-online.target zd1200-net.service
 StartLimitIntervalSec=0
@@ -766,7 +782,7 @@ if [ "$CONSOLE_TTY" = 1 ]; then
     cat > /etc/systemd/system/zd1200-console-tty.service <<'UNIT'
 [Unit]
 Description=ZD1200 guest serial console on the container console tty
-Documentation=https://github.com/ms264556/dbro_zd1200
+Documentation=https://github.com/ms264556/zd1200
 After=zd1200.service
 ConditionPathExists=/dev/tty1
 

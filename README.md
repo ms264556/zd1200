@@ -14,7 +14,7 @@ except when installing from a dead ZD1200's own storage.
 Clone the project first:
 
 ```sh
-git clone https://github.com/ms264556/dbro_zd1200 && cd dbro_zd1200
+git clone https://github.com/ms264556/zd1200 && cd zd1200
 ```
 
 ## Recipe 1: you have a configuration backup

@@ -52,7 +52,7 @@ cat > "$WORK/S49zd_license" <<'ZD_LICENSE'
 #
 # S49zd_license — reconcile /writable's AP license list with this ZD1200.
 #
-# Installed by scripts/container/patches/25-writable-license.sh (dbro_zd1200).
+# Installed by scripts/container/patches/25-writable-license.sh (zd1200).
 #
 # rcS runs this after sys_init has mounted /writable read-write and before
 # S50controller reads the license list.  See the patch header for why a foreign
